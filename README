@@ -1,0 +1,47 @@
+Tie::Util, version 0.01 (beta)
+
+This module provides a few subroutines for examining and modifying
+tied variables,  including those that hold weak references to  the
+objects to which they are tied.
+
+
+INSTALLATION
+
+The easiest way to install this module is to use the CPAN module or
+the cpan script:
+
+    [sudo] perl -MCPAN -e "install Tie::Util"
+
+    [sudo] cpan Tie::Util
+
+Or you can use the following:
+
+    perl Makefile.PL
+    make
+    make test
+    [sudo] make install
+
+
+DEPENDENCIES
+
+This module requires perl 5.8.3 or later.
+
+
+DOCUMENTATION
+
+After installing, you can find documentation for these modules with
+the perldoc command.
+
+    perldoc Tie::Util
+
+Or try using man (it's faster, in my experience):
+
+    man Tie::Util
+
+
+COPYRIGHT AND LICENCE
+
+Copyright (C) 2007 Father Chrysostomos
+
+This program is free software; you may redistribute it and/or modify
+it under the same terms as perl.
