@@ -1,17 +1,18 @@
 package Tie::Util;
 
-use 5.006;
+use 5.008;
 
-$VERSION = '0.01';
+$VERSION = '0.02';
 
 # B doesn't export this. I *hope* it doesn't change!
 use constant SVprv_WEAKREF => 0x80000000; # from sv.h
 
 use Exporter 5.57 'import';
-use Scalar::Util qw 'reftype blessed weaken';
+use Scalar::Util 1.09 qw 'reftype blessed weaken';
 
-@EXPORT = qw 'is_tied weak_tie weaken_tie is_weak_tie';
-%EXPORT_TAGS = (all=>\@EXPORT);
+@EXPORT = qw 'is_tied weak_tie weaken_tie is_weak_tie tie tied';
+@EXPORT_OK = 'fix_tie';
+%EXPORT_TAGS = (all=>[@EXPORT,@EXPORT_OK]);
 
 {
 	my ($ref, $class);
@@ -70,7 +71,7 @@ sub expand($) {
 		$code =~ y&*&$&;
 		"$subst$code}";
 	>gse;
-	eval "$_}";
+	eval "$_}1" or die $@, "\n", $_;
 #warn $_;
 }
 
@@ -88,6 +89,30 @@ sub expand($) {
 #*TIEARRAY = *TIESCALAR = *TIEHANDLE = *TIEHASH = sub { $_[1] };
 *to'TIEARRAY = *to'TIESCALAR = *to'TIEHANDLE = *to'TIEHASH = sub { $_[1] };
 
+
+# :lvalue makes the following sub return the same scalar, as is evidenced
+# by the following one-liner:
+#
+# perl -MScalar::Util=refaddr -le 'print refaddr \sub:lvalue { \
+# print refaddr \my $x; $x}->()'
+#
+# (Remove the :lvalue and you get two different refaddrs.)
+
+expand<<'}';
+sub tie(\[%$@*]$@):lvalue  {
+	my($var,$class,@args) = @_; _underload $var;
+#warn "$class: $args[0]";
+	my $ref_thereto;
+	<<<$ref_thereto =
+		\tie *$var, $class,
+			$class eq 'to'
+			? $dummy ||= bless\my $dummy
+			: @args;>>>
+	_restore;
+	$$ref_thereto = $args[0], if $class eq 'to';
+	$$ref_thereto;
+}
+
 expand<<'}';
 sub is_tied (\[%$@*]) {
 	my ($var) = @_;
@@ -95,7 +120,7 @@ sub is_tied (\[%$@*]) {
 	<<<defined tied *$var and _restore, return !0;>>>
         # If tied returns undef, it might still be tied, in which case all
 	# tie methods will die.
-	local $@;
+	local *@;
 	eval {
 		if( $type eq 'GLOB' || $type eq 'IO' ){
 			no warnings 'unopened';
@@ -117,12 +142,11 @@ sub is_tied (\[%$@*]) {
 	return !!$@;
 }
 
-expand<<'}';
-sub weak_tie(\[%@$*]$@){
-	my($var,$class,@args) = @_; _underload $var;
-	<<<weaken tie *$var, $class, @args;>>>
-	_restore;
-	<<<return tied *$var>>>
+sub weak_tie(\[%@$*]$@):lvalue{
+	my($var,$class,@args) = @_;
+	my $ref =\ &tie($var, $class, @args);
+	weaken $$ref;
+	$$ref;
 }
 
 expand<<'}';
@@ -143,7 +167,7 @@ expand<<'}';
 sub is_weak_tie(\[%@$*]){
 	return undef unless &is_tied($_[0]);
 	_underload $_[0];
-	<<<_restore,return 1 if not defined tied *{$_[0]};>>> # stale
+	<<<_restore,return !1 if not defined reftype tied *{$_[0]};>>>
 
 	# We have to use B here because 'isweak tied' fails.
 
@@ -162,6 +186,39 @@ sub is_weak_tie(\[%@$*]){
 	die "Tie::Util internal error: This tied variable has no tie magic! Bug reports welcome.";
 }
 
+sub tied(\[%@$*]):lvalue{
+	return undef unless &is_tied($_[0]);
+
+# From pp_sys.c in the perl source code:
+#	    /* For tied filehandles, we apply tiedscalar magic to the IO
+#	       slot of the GP rather than the GV itself. AMS 20010812 */
+	my $thing = shift;
+	_underload $thing;
+	reftype $thing eq 'GLOB' and $thing = *$thing{IO};
+	_restore;
+
+	exists & svref_2object or require(B), B->import('svref_2object');
+	for(svref_2object($thing)->MAGIC) {
+		$_->TYPE =~ /^[qPp]\z/ and
+			$thing = $_->OBJ->object_2svref;
+	}
+	$thing or die "Tie::Util internal error: " .
+	    "This tied variable has no tie magic! Bug reports welcome.";
+	$$thing;
+}
+
+sub fix_tie($):lvalue {
+ for my $tie ($_[0]) {
+  return unless ref \$tie eq REF and defined( my $tie_obj = tied $tie);
+  my $pkg = ref $tie_obj;
+  length $pkg or $pkg = $tie_obj;
+  local *{"$pkg:\:STORE"};
+  undef *{"$pkg:\:STORE"};
+  eval { $tie = undef }
+ }
+ $_[0];
+}
+
 undef *expand;
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!()__END__()!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -172,7 +229,7 @@ Tie::Util - Utility functions for fiddling with tied variables
 
 =head1 VERSION
 
-Version 0.01
+Version 0.02
 
 This is a beta version. If you could please test it and report any bugs
 (via e-mail), I would be grateful.
@@ -186,6 +243,7 @@ This is a beta version. If you could please test it and report any bugs
   
   $obj = tied %hash;
   tie %another_hash, to => $obj; # two hashes now tied to the same object
+  Tie::Util::tie @whatever, to => "MyClass"; # tie @whatever to a class
   
   is_tied %hash; # returns true
   
@@ -211,9 +269,17 @@ tie variables to existing objects, like this:
   tie $var, to => $obj;
   weak_tie @var, to => $another_obj; # for a weak tie
 
+It also allows one to tie a variable to a package, instead of an object
+(see below).
+
+=for comment
+This is how it would read if perl let me override tie
+, if the C<tie> function is imported (which is done by default).
+
 =head1 FUNCTIONS
 
-All the following functions are exported by default. You can choose to
+All the following functions are exported by default, except for C<fix_tie>.
+You can choose to
 import only a few, with C<use Tie::Util qw'is_tied weak_tie'>, or none at
 all, with C<use Tie::Util()>.
 
@@ -234,9 +300,27 @@ stale (the object to which it was tied [without holding a reference count]
 has lost all other references, so the variable is now tied to C<undef>),
 whereas C<tied> returns C<undef> in such cases.
 
+=item Tie::Util::tie [*%@$]var, $package, @args
+
+=item &tie( \$var, $package, @args );
+
+For some reason, perl (as of 5.10.1) won't let me override the built-in, so 
+you have to
+call this with the C<Tie::Util::> prefix or use the C<&tie(...)> notation.
+
+This is just like the built-in function except that, when called with
+'to' as the package, it allows you to tie the variable to I<anything> 
+(well,
+any scalar at least). This is
+probably only useful for tying a variable to a package, as opposed to an
+object. (Believe it or not, it's just pure Perl; no XS trickery.)
+
+Otherwise the behaviour is identical to the core function.
+
 =item weak_tie [*%@$]var, $package, @args
 
-Like L<tie|perlfunc/tie>, this calls C<$package>'s tie constructor, passing
+Like perl's L<tie|perlfunc/tie> function, this calls C<$package>'s tie 
+constructor, passing
 it the C<@args>, and ties the variable to the returned object. But the tie
 that it creates is a weak one, i.e., the tied variable does not hold a
 reference count on the object.
@@ -250,19 +334,76 @@ This turns an existing tie into a weak one.
 Returns a defined true or false, indicating whether a tied variable is
 weakly tied. Returns C<undef> if the variable is not tied.
 
+NOTE: This used to return true for a variable tied to C<undef>. Now (as of
+version 0.02) it returns false, because the tie does not actually hold a
+weak reference; it holds no reference at all.
+
+=item Tie::Util::tied [*%@$]var
+
+=item &tied( \$var )
+
+Like perl's L<tied|perlfunc/tied> function, this returns what the variable
+is tied to, but, unlike the built-in, it returns the actual scalar that the
+tie uses (instead of copying it), so you can, for instance, check to see 
+whether the variable is
+tied to a tied variable with C<tied &tied($var)>.
+
+=item fix_tie (scalar lvalue expression)
+
+This provides a work-around for a bug in perl that was introduced in 5.8.9
+and 5.10.0, but will be fixed in 5.12.0: If you assign a reference to a
+tied scalar variable, some operators will operate on that reference,
+instead of
+calling C<FETCH> as using its return value.
+
+If you assign a reference to a tied variable, or a value that I<might> be a
+reference to a variable that I<might> be tied, then you can 'fix' the tie
+afterwards by called C<fix_tie> on it. C<fix_tie> is an lvalue function
+that returns its first argument after fixing it, so you can replace code
+like
+
+  ($var = $value) =~ s/fror/dwat/;
+
+with
+
+  fix_tie( $var = $value ) =~ s/fror/dwat/;
+
 =back
+
+=head1 THE to NAMESPACE
+
+Tie::Util installs tie constructors in the 'to' package to work its magic.
+If anyone else wants to release a module named 'to', just let me know and
+I'll give you comaint status, as long as you promise not to break 
+Tie::Util!
 
 =head1 PREREQUISITES
 
-perl 5.8.3 or later
+perl 5.8.0 or later
+
+Exporter 5.57 or later
+
+Scalar::Util 1.09 or later
 
 =head1 BUGS
+
+=over 4
+
+=item *
+
+This module does not provide a single function to access the information 
+obscured by 
+a tie. For
+that, you can simply untie a variable, access its contents, and re-tie it
+(which is fairly trivial with the functions this module already provides).
+
+=back
 
 To report bugs, please e-mail the author.
 
 =head1 AUTHOR & COPYRIGHT
 
-Copyright (C) 2007 Father Chrysostomos <sprout [at] cpan
+Copyright (C) 2007-9 Father Chrysostomos <sprout [at] cpan
 [dot] org>
 
 This program is free software; you may redistribute it and/or modify
