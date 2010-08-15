@@ -1,4 +1,4 @@
-Tie::Util, version 0.02 (beta)
+Tie::Util, version 0.03 (beta)
 
 This module provides a few subroutines for examining and modifying
 tied variables,  including those that hold weak references to  the
@@ -6,17 +6,21 @@ objects to which they are tied,  and variables tied to packages as
 opposed to objects.
 
 
-CHANGES IN THIS RELEASE
+RECENT CHANGES
 
+0.03
+----
+Bug fix:  Suppress ‘Ambiguous use’ warnings introduced in perl 5.13.3.
+
+0.02
+----
 Incompatible change:
 • is_weak_tie now returns false for a variable tied to undef, because
   the tie does not actually hold a weak reference; it holds no refe-
   rence at all.
-
 New features:
 • Added support for tying to a package (or anything else)
 • Added a ‘tied’ function that returns the actual scalar the tie uses.
-
 Bug fixes:
 • Tying $@ no longer makes is_tied die.
 • weak_tie now returns the same scalar that holds the tie, the way
@@ -63,7 +67,7 @@ Or try using man (it's faster, in my experience):
 
 COPYRIGHT AND LICENCE
 
-Copyright (C) 2007-8 Father Chrysostomos
+Copyright (C) 2007-10 Father Chrysostomos
 
 This program is free software; you may redistribute it and/or modify
 it under the same terms as perl.

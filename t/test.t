@@ -13,7 +13,7 @@ use Test::More tests =>
 	+1  # weak_tie retval
 	+10 # tie to non-obj
 	+1  # tied
-	+1  # fix_tie
+	+2  # fix_tie
 ;
 use Symbol 'geniosym';
 
@@ -261,5 +261,10 @@ is tied(*${}}), 37, 'tie*{IO} to non-obj';
  fix_tie($foo = $a);
  my $y = 0 + $foo;
  
- ::is($x, $y, 'fix_tie')
+ ::is($x, $y, 'fix_tie');
+
+ # Repeat the test to make sure we don’t ‘fix’ the tie.
+ fix_tie($foo = $a);
+ $y = 0 + $foo;
+ ::is($x, $y, 'fix_tie again')
 }

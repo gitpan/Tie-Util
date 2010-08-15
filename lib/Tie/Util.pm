@@ -2,7 +2,7 @@ package Tie::Util;
 
 use 5.008;
 
-$VERSION = '0.02';
+$VERSION = '0.03';
 
 # B doesn't export this. I *hope* it doesn't change!
 use constant SVprv_WEAKREF => 0x80000000; # from sv.h
@@ -71,6 +71,7 @@ sub expand($) {
 		$code =~ y&*&$&;
 		"$subst$code}";
 	>gse;
+#local $SIG{__WARN__} = sub { warn shift;die $_ };
 	eval "$_}1" or die $@, "\n", $_;
 #warn $_;
 }
@@ -117,7 +118,7 @@ expand<<'}';
 sub is_tied (\[%$@*]) {
 	my ($var) = @_;
 	my $class = _underload $var;
-	<<<defined tied *$var and _restore, return !0;>>>
+	<<<defined CORE::tied *$var and _restore, return !0;>>>
         # If tied returns undef, it might still be tied, in which case all
 	# tie methods will die.
 	local *@;
@@ -153,13 +154,13 @@ expand<<'}';
 sub weaken_tie(\[%@$*]){
 	my $var = _underload shift;
 	my $obj;
-	<<<$obj = tied *$var;>>>
+	<<<$obj = CORE::tied *$var;>>>
 	if(!defined $obj) {
 		_restore, return
 	}
 	# I have to re-tie it, since 'weaken tied' doesn't work.
 	local *{ref($obj).'::UNTIE'};
-	<<<weaken tie *$var, to => $obj>>>;
+	<<<weaken CORE::tie *$var, to => $obj>>>;
 	_restore, return;
 }
 
@@ -167,7 +168,9 @@ expand<<'}';
 sub is_weak_tie(\[%@$*]){
 	return undef unless &is_tied($_[0]);
 	_underload $_[0];
-	<<<_restore,return !1 if not defined reftype tied *{$_[0]};>>>
+	<<<
+	 _restore,return !1 if not defined reftype CORE::tied *{$_[0]};
+	>>>
 
 	# We have to use B here because 'isweak tied' fails.
 
@@ -209,7 +212,8 @@ sub tied(\[%@$*]):lvalue{
 
 sub fix_tie($):lvalue {
  for my $tie ($_[0]) {
-  return unless ref \$tie eq REF and defined( my $tie_obj = tied $tie);
+  return
+   unless ref \$tie eq REF and defined( my $tie_obj = CORE::tied $tie);
   my $pkg = ref $tie_obj;
   length $pkg or $pkg = $tie_obj;
   local *{"$pkg:\:STORE"};
@@ -229,7 +233,7 @@ Tie::Util - Utility functions for fiddling with tied variables
 
 =head1 VERSION
 
-Version 0.02
+Version 0.03
 
 This is a beta version. If you could please test it and report any bugs
 (via e-mail), I would be grateful.
@@ -300,12 +304,12 @@ stale (the object to which it was tied [without holding a reference count]
 has lost all other references, so the variable is now tied to C<undef>),
 whereas C<tied> returns C<undef> in such cases.
 
-=item Tie::Util::tie [*%@$]var, $package, @args
+=item tie [*%@$]var, $package, @args
 
 =item &tie( \$var, $package, @args );
 
-For some reason, perl (as of 5.10.1) won't let me override the built-in, so 
-you have to
+perl did not allow the built-in to be overridden until version 5.13.3, so, 
+for older perls, you have to
 call this with the C<Tie::Util::> prefix or use the C<&tie(...)> notation.
 
 This is just like the built-in function except that, when called with
@@ -325,6 +329,9 @@ it the C<@args>, and ties the variable to the returned object. But the tie
 that it creates is a weak one, i.e., the tied variable does not hold a
 reference count on the object.
 
+Like C<tie>, above, it lets you tie the variable to anything, not just an
+object.
+
 =item weaken_tie [*%@$]var
 
 This turns an existing tie into a weak one.
@@ -338,7 +345,7 @@ NOTE: This used to return true for a variable tied to C<undef>. Now (as of
 version 0.02) it returns false, because the tie does not actually hold a
 weak reference; it holds no reference at all.
 
-=item Tie::Util::tied [*%@$]var
+=item tied [*%@$]var
 
 =item &tied( \$var )
 
@@ -348,13 +355,17 @@ tie uses (instead of copying it), so you can, for instance, check to see
 whether the variable is
 tied to a tied variable with C<tied &tied($var)>.
 
+As with C<tie>, you need to use the C<Tie::Util::> prefix or the ampersand
+form if your perl
+version is less than 5.13.3.
+
 =item fix_tie (scalar lvalue expression)
 
 This provides a work-around for a bug in perl that was introduced in 5.8.9
-and 5.10.0, but will be fixed in 5.12.0: If you assign a reference to a
+and 5.10.0, but was fixed in 5.13.2: If you assign a reference to a
 tied scalar variable, some operators will operate on that reference,
 instead of
-calling C<FETCH> as using its return value.
+calling C<FETCH> and using its return value.
 
 If you assign a reference to a tied variable, or a value that I<might> be a
 reference to a variable that I<might> be tied, then you can 'fix' the tie
@@ -403,7 +414,7 @@ To report bugs, please e-mail the author.
 
 =head1 AUTHOR & COPYRIGHT
 
-Copyright (C) 2007-9 Father Chrysostomos <sprout [at] cpan
+Copyright (C) 2007-10 Father Chrysostomos <sprout [at] cpan
 [dot] org>
 
 This program is free software; you may redistribute it and/or modify

@@ -1,7 +1,11 @@
 Revision history for Tie::Util
 
+0.03    15 August, 2010
+        Bug fix:  Suppress  ‘Ambiguous use’  warnings  introduced  in
+        perl 5.13.3.
+
 0.02    15 November, 2009
-        Incompatible change:
+        Incompatible changes:
         • is_weak_tie now returns false for a variable tied to  undef,
           because the tie does not actually hold a weak reference; it 
           holds no reference at all.
